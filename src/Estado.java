@@ -1,8 +1,6 @@
 import java.net.DatagramPacket;
 import java.net.InetAddress;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -13,20 +11,16 @@ public class Estado {
     private Condition notEmpty = l.newCondition();
 
     private Queue<DatagramPacket> pacotesAenviar = new LinkedList<>();
-    private Queue<DatagramPacket> pacotesAreceber = new LinkedList<>();
     private int qsize = 0;
-    public DatagramPacket[] enviar;
-    public DatagramPacket[] receber;
-    public HashMap<Integer,Integer> ACKS = new HashMap<>(); // <SQN,Ocorrencias>
+    private Map<Integer,DatagramPacket> pacotesDoFicheiro = new HashMap<>();
     private int portaorigem;
     private int portadestino;
     private InetAddress ip; //para ja so um ip por estar a testar com localhost
     private int nofpackets;
     private String filename;
     private long fsize;
-    public int recebidos = 0;
-    public int janela; // Tamanho da janela
-    public int enviados = 0;
+    private int recebidos = 0;
+    private int janela = 1; // Tamanho da janela
     private boolean conectado = false;
     private boolean prontoAtransferir = false;
     private int esperaACK = 0;
@@ -40,49 +34,6 @@ public class Estado {
        this.ip = ip;
     }
 
-    public void poeACK(int key, int value) 
-    {
-        l.lock();
-        try {
-            ACKS.put(key,value);
-        }
-        finally {
-            l.unlock();
-        }
-    }
-    
-    public int getACK(int key)
-    {
-        l.lock();
-        try {
-            return ACKS.get(key);
-        }
-        finally {
-            l.unlock();
-        }
-    }
-
-    public boolean existeACK (int key) 
-    {
-        l.lock();
-        try {
-            return ACKS.containsKey(key);
-        }
-        finally {
-            l.unlock();
-        }
-    }
-
-    public void removeACK(int key) 
-    {
-        l.lock();
-        try {
-            ACKS.remove(key);
-        }
-        finally {
-            l.unlock();
-        }
-    }
 
     public DatagramPacket getPacoteAenviar() {
         l.lock();
@@ -197,5 +148,56 @@ public class Estado {
 
     public void setPortadestino(int portadestino) {
         this.portadestino = portadestino;
+    }
+
+    public int getJanela() {
+        return janela;
+    }
+
+    public void setJanela(int janela) {
+        this.janela = janela;
+    }
+
+    public int getRecebidos() {
+        return recebidos;
+    }
+
+    public void setRecebidos(int recebidos) {
+        this.recebidos = recebidos;
+    }
+
+    public DatagramPacket takePacoteDoFicheiro(int sqn)
+    {
+        l.lock();
+        try {
+            DatagramPacket p = this.pacotesDoFicheiro.get(sqn);
+            this.pacotesDoFicheiro.remove(p);
+            return p;
+        }
+        finally {
+            l.unlock();
+        }
+    }
+
+    public boolean containsPacote(int sqn)
+    {
+        l.lock();
+        try {
+            return this.pacotesDoFicheiro.containsKey(sqn);
+        }
+        finally {
+            l.unlock();
+        }
+    }
+
+    public void putPacoteDoFicheiro(DatagramPacket p, int sqn)
+    {
+        l.lock();
+        try {
+            this.pacotesDoFicheiro.put(sqn,p);
+        }
+        finally {
+            l.unlock();
+        }
     }
 }

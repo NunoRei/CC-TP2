@@ -51,11 +51,6 @@ public class TransfereCC implements Runnable {
                 default:
                     break;
             }
-            /*
-            if (args[0].equals("7776")) {
-                aUDP.fileRequest("C:\\Users\\nuno\\Desktop\\wallpaper.jpg");
-                break;
-            }*/
         }
     }
 
@@ -69,12 +64,7 @@ public class TransfereCC implements Runnable {
         {
             pacote = aUDP.recebeuPacote();
 
-            int nseq = aUDP.getSQN(pacote);
-            int porigem = aUDP.getPortaOrigem(pacote);
             int tipo = aUDP.getTipo(pacote);
-            int npacotes = aUDP.getNumeroPacotes(pacote);
-            int tamanho = aUDP.getTamanho(pacote);
-            String dados = aUDP.getDados(pacote);
 
             // Sera necessario verificar sequence number dos PDUs
 
@@ -86,36 +76,12 @@ public class TransfereCC implements Runnable {
                     break;
                 case 2: // (SYN+ACK)
                     aUDP.recebeSYNACK(pacote);
-                    // prepara pacote que vai informar cliente do tamanho do ficheiro(?) e numero de
-                    // pacotes que serao enviados (talvez nome do ficheiro?)
-                    /*e.nofpackets = npacotes;
-                    e.filename = dados;
-                    e.receber = new DatagramPacket[(int) e.nofpackets];
-                    System.out.println(
-                            "File:" + e.filename + "\nSize:" + e.fsize + "\nPacotesaenviar:" + e.nofpackets + "\nIPaddress:"
-                                    + e.ip.toString() + "\nPortaDestino:" + e.portadestino + "\nPortaOrigem:" + e.portaorigem);
-                    DatagramPacket p = (new PDU(3, e.portaorigem, e.portadestino, 1, ("0").getBytes(), ("0").getBytes().length,
-                            3, e.ip)).formaPacote();
-                    colocaParaEnvio(p);*/
                     break;
                 case 3: // ACK
                     aUDP.recebeuACK(pacote);
-                    // Enviar ACK para pacotes recebidos com sucesso
-                    //verificaACK(dados, pacote);
                     break;
                 case 4: // Data
                     aUDP.guardaDados(pacote);
-                    /*
-                    // Enviar pacotes com os dados do ficheiro
-                    e.receber[(nseq) - 4] = pacote;
-                    e.recebidos += 1;
-                    // manda ack com o numero do pacote recebido
-                    DatagramPacket ACK = (new PDU(nseq, e.portaorigem, e.portadestino, 1, null, 0, 3, e.ip)).formaPacote();
-                    colocaParaEnvio(ACK);
-                    //
-
-                    if (e.recebidos == e.nofpackets)
-                        assembleFile(); // Nao pode esperar pelos pacotes todos para formar o ficheiro*/
                     break;
                 case 5:
                     aUDP.sendResponse(pacote);

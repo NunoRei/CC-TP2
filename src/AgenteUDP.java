@@ -3,6 +3,7 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,6 +20,7 @@ public class AgenteUDP {
     private Condition noResponse = l.newCondition();
     private Condition notCompleted = l.newCondition();
     private int qsize = 0;
+    private static int packetsize = 1480;
     private Queue<DatagramPacket> pacotesrecebidos = new LinkedList<>();
 
     private class PDU {
@@ -218,6 +220,7 @@ public class AgenteUDP {
             p = (new PDU(e.getSQN(), e.getPortaorigem(), pdestino, 1, null, 0, 3, e.getIp())).formaPacote();
             e.colocaParaEnvio(p);
             receiveFile(e);
+            System.out.println("Transferencia Concluida!");
         }
         finally {
             l.unlock();
@@ -270,7 +273,8 @@ public class AgenteUDP {
             }
             e.setRecebeuACK(0);
             e.setEsperaACK(0);
-            comecaTransferencia(e);
+            transferFile(path,e);
+            System.out.println("Transferencia Concluida!");
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -330,109 +334,89 @@ public class AgenteUDP {
                 (byte)value};
     }
 
-    public void preparetransferFile(String s, Estado e) throws IOException {
+    public void preparetransferFile(String path, Estado e) {
+        l.lock();
+        try {
+            File f = new File(path);
+            long fsize = f.length();
+            String dir[] = path.split("\\\\");
+            String filename = dir[dir.length - 1];
+            int nofpackets = (int)(Math.ceil(((int) fsize) / packetsize)) + 1;
+            e.setNofpackets(nofpackets);
+            e.setFilename(filename);
+            e.setFsize(fsize);
+        }
+        finally {
+            l.unlock();
+        }
+    }
+
+    public void transferFile(String s, Estado e) throws IOException {
         l.lock();
         File f = new File(s);
         BufferedInputStream bis = null;
         try {
-            int packetsize = 1480;
-            long fsize = f.length();
-            e.setFsize(fsize);
+            long fsize = e.getFsize();
+            int nofpackets = e.getNofpackets();
+            int wsize = e.getJanela();
+            int ack;
             int read = 0;
-            String dir[] = s.split("\\\\");
-            String filename = dir[dir.length - 1];
-            e.setFilename(filename);
-            int nofpackets = (int)(Math.ceil(((int) f.length()) / packetsize)) + 1;
-            e.setNofpackets(nofpackets);
-            DatagramPacket aenviar[] = new DatagramPacket[nofpackets];
-
+            ArrayList<DatagramPacket> buffpacotes = new ArrayList<>();
             bis = new BufferedInputStream(new FileInputStream(f));
-            for (double i = 0; i < nofpackets; i++) {
-                byte[] buff;
-                if (i == (nofpackets - 1)) {
-                    int tam = (int) fsize - read;
-                    buff = new byte[tam];
-                } else
-                    buff = new byte[packetsize];
-                read += bis.read(buff, 0, buff.length);
-                PDU pacote = new PDU(6 + (int) i, e.getPortaorigem(), e.getPortadestino(), e.getNofpackets(), buff, buff.length,
-                        4, e.getIp());
-                DatagramPacket p = pacote.formaPacote();
-                aenviar[(int) i] = p;
+            int sqn = e.getSQN();
+            int sqnPacote = sqn;
+            int i=0;
+            while(i<nofpackets) {
+                /* Le e guarda os pacotes criados se necessario */
+                while (buffpacotes.size()<wsize && i<nofpackets) {
+                    byte[] buff;
+                    if (i == (nofpackets - 1)) {
+                        int tam = (int) fsize - read;
+                        buff = new byte[tam];
+                    } else
+                        buff = new byte[packetsize];
+                    read += bis.read(buff, 0, buff.length);
+                    PDU pacote = new PDU(sqnPacote, e.getPortaorigem(), e.getPortadestino(), e.getNofpackets(), buff, buff.length,
+                            4, e.getIp());
+                    DatagramPacket p = pacote.formaPacote();
+                    buffpacotes.add(p);
+                    sqnPacote+=1;
+                    i++;
+                }
+                e.setRecebeuACK(0);
+                /* Envia os pacotes */
+                for (int j = 0; j < wsize && j<buffpacotes.size(); j++) {
+                    DatagramPacket p = buffpacotes.get(j);
+                    e.colocaParaEnvio(p);
+                    e.setEsperaACK(getSQN(p)+1);
+                }
+                /* Espera ACK */
+                while ((e.getRecebeuACK())==0) {
+                    try {
+                        noACK.await();
+                    } catch (InterruptedException ex) { }
+                }
+                /* Verifica valor do ACK */
+                ack = e.getRecebeuACK();
+                if (ack==e.getEsperaACK()) {
+                    buffpacotes = new ArrayList<>();
+                    wsize += 3;
+                }
+                else {
+                    /* Remover os pacotes que foram enviados com sucesso */
+                    for(int k=0; k<buffpacotes.size();k++) {
+                        DatagramPacket p = buffpacotes.get(k);
+                        if (getSQN(p)==ack) break;
+                        else buffpacotes.remove(k);
+                    }
+                    wsize = 1;
+                }
+                //i = ack-sqn;
             }
-            e.enviar = aenviar;
-        } finally {
+        }
+        finally {
             if (bis != null)
                 bis.close();
-            l.unlock();
-        }
-    }
-
-    /*
-    public void verificaACK(String ack, DatagramPacket p) {
-        l.lock();
-        if (ack.equals("0")) {
-            // comeca envio
-            for (int i = 0; i < e.nofpackets; i++) {
-                while (e.enviados == e.janela) {
-                    try {
-                        notInWindowSize.await();
-                    } catch (InterruptedException e1) {
-                        e1.printStackTrace();
-                    }
-                }
-                colocaParaEnvio(e.enviar[i]);
-                e.enviados +=1;
-            }
-        }
-        else {
-            int nseq = aUDP.getSQN(p);
-            int n = 1;
-            if (e.existeACK(nseq)) {
-                n = e.getACK(nseq);
-                e.removeACK(nseq);
-                e.poeACK(nseq,n+1);
-            }
-            else {
-                e.poeACK(nseq,n);
-            }
-            e.enviados-=1;
-            notInWindowSize.signalAll();
-        }
-        //verificar outras acks para erros ou que correu tudo bem
-        l.unlock();
-    }*/
-
-    public void comecaTransferencia(Estado e)
-    {
-        l.lock();
-        try{
-            int nofpackets = e.getNofpackets();
-            System.out.println("PACOTES A ENVIAR: "+nofpackets);
-            for (int i = 0; i < nofpackets; i++) {
-                e.colocaParaEnvio(e.enviar[i]);
-                e.enviados +=1;
-            }
-            System.out.println("Transferencia Concluida!");
-        }
-        finally {
-            l.unlock();
-        }
-    }
-
-    public void receiveFile(Estado e)
-    {
-        l.lock();
-        try {
-            e.receber = new DatagramPacket[e.getNofpackets()];
-            while (e.recebidos != e.getNofpackets())
-                notCompleted.await();
-
-            assembleFile(e);
-            System.out.println("Transferencia Concluida!");
-        }
-        catch (Exception ex) {}
-        finally {
             l.unlock();
         }
     }
@@ -442,10 +426,9 @@ public class AgenteUDP {
         l.lock();
         try {
             Estado e = this.conns.get(getPortaOrigem(p)).getEstado();
-            int indice = getSQN(p)-6;
-            e.receber[indice] = p;
-            e.recebidos+=1;
-            notCompleted.signalAll();
+            e.putPacoteDoFicheiro(p,getSQN(p));
+            e.setRecebidos(e.getRecebidos()+1);
+            notInWindowSize.signalAll();
         }
         finally{
             l.unlock();
@@ -453,27 +436,42 @@ public class AgenteUDP {
 
     }
 
-    public void assembleFile(Estado e) {
+    public void receiveFile(Estado e) {
         l.lock();
         FileOutputStream fos = null;
         try {
+            int nofpackets = e.getNofpackets();
+            int sqn = e.getSQN()+1;
+            int wsize = e.getJanela();
+            int i = 0;
             fos = new FileOutputStream(e.getFilename());
             BufferedOutputStream bos = new BufferedOutputStream(fos);
-
-            byte[] conteudoTotal;
-
             ByteArrayOutputStream os = new ByteArrayOutputStream();
-            int nofpackets = e.getNofpackets();
-            for (double i = 0; i < nofpackets; i++) {
-                byte data[] = e.receber[(int)i].getData();
-                int dataSize = ByteBuffer.wrap(Arrays.copyOfRange(data,16,20)).getInt();
-                byte conteudo[] = Arrays.copyOfRange(data,20,dataSize+20);
-                os.write(conteudo);
+            while(i < nofpackets) {
+                /* Esperar receber pacotes */
+                while(e.getRecebidos()<wsize) {
+                    if (!(notInWindowSize.await(1, TimeUnit.SECONDS))) break;
+                }
+                /* Buscar os pacotes recebidos e escrever para ficheiro */
+                int iteracoes = 0;
+                while (e.containsPacote(sqn)) {
+                    byte data[] = e.takePacoteDoFicheiro(sqn).getData();
+                    int dataSize = ByteBuffer.wrap(Arrays.copyOfRange(data,16,20)).getInt();
+                    byte conteudo[] = Arrays.copyOfRange(data,20,dataSize+20);
+                    bos.write(conteudo,0,conteudo.length);
+                    bos.flush();
+                    sqn += 1;
+                    iteracoes++;
+                    i++;
+                }
+                /* Ajustar a janela */
+                if (e.getRecebidos() == wsize && iteracoes == wsize) wsize += 3;
+                else wsize = 1;
+                /* Enviar ACK */
+                e.setRecebidos(0);
+                DatagramPacket p = (new PDU(sqn, e.getPortaorigem(), e.getPortadestino(), 1, null, 0, 3, e.getIp())).formaPacote();
+                e.colocaParaEnvio(p);
             }
-            os.flush();
-            conteudoTotal = os.toByteArray();
-            bos.write(conteudoTotal, 0, conteudoTotal.length);
-            bos.flush();
             bos.close();
             fos.close();
         }
