@@ -367,7 +367,7 @@ public class AgenteUDP {
             int sqnPacote = sqn;
             int i=0;
             while(i<nofpackets) {
-                /* Le e guarda os pacotes criados se necessario */
+                /* Le se necessario e guarda os pacotes criados */
                 while (buffpacotes.size()<wsize && i<nofpackets) {
                     byte[] buff;
                     if (i == (nofpackets - 1)) {
@@ -385,13 +385,17 @@ public class AgenteUDP {
                 }
                 e.setRecebeuACK(0);
                 /* Envia os pacotes */
+                System.out.println("Tamanho da Janela: "+wsize);
                 for (int j = 0; j < wsize && j<buffpacotes.size(); j++) {
                     DatagramPacket p = buffpacotes.get(j);
-                    e.colocaParaEnvio(p);
+                    System.out.println("Vai reenviar pacote "+getSQN(p));
                     e.setEsperaACK(getSQN(p)+1);
+                    e.colocaParaEnvio(p);
                 }
                 /* Espera ACK */
+                System.out.println("Espera ACK "+e.getEsperaACK());
                 while ((e.getRecebeuACK())==0) {
+                    System.out.println("Vai esperar ACK");
                     try {
                         noACK.await();
                     } catch (InterruptedException ex) { }
@@ -399,19 +403,14 @@ public class AgenteUDP {
                 /* Verifica valor do ACK */
                 ack = e.getRecebeuACK();
                 if (ack==e.getEsperaACK()) {
-                    buffpacotes = new ArrayList<>();
+                    System.out.println("Recebeu ACK correto, esperava "+e.getEsperaACK()+" == "+ack);
                     wsize += 3;
                 }
                 else {
-                    /* Remover os pacotes que foram enviados com sucesso */
-                    for(int k=0; k<buffpacotes.size();k++) {
-                        DatagramPacket p = buffpacotes.get(k);
-                        if (getSQN(p)==ack) break;
-                        else buffpacotes.remove(k);
-                    }
                     wsize = 1;
                 }
-                //i = ack-sqn;
+                /* Remover os pacotes que foram enviados com sucesso */
+                buffpacotes = removerJaEnviados(buffpacotes,ack);
             }
         }
         finally {
@@ -419,6 +418,15 @@ public class AgenteUDP {
                 bis.close();
             l.unlock();
         }
+    }
+
+    private ArrayList<DatagramPacket> removerJaEnviados(ArrayList<DatagramPacket> pacotes, int sqn)
+    {
+        ArrayList<DatagramPacket> result = new ArrayList<>();
+        for (DatagramPacket p : pacotes) {
+            if (getSQN(p)>=sqn) result.add(p);
+        }
+        return result;
     }
 
     public void guardaDados(DatagramPacket p)
@@ -450,7 +458,8 @@ public class AgenteUDP {
             while(i < nofpackets) {
                 /* Esperar receber pacotes */
                 while(e.getRecebidos()<wsize) {
-                    if (!(notInWindowSize.await(1, TimeUnit.SECONDS))) break;
+                    System.out.println("Esperar receber pacotes...");
+                    if (!(notInWindowSize.await(1, TimeUnit.SECONDS))) break; // Uma melhoria seria medir RTT para substituir o 1
                 }
                 /* Buscar os pacotes recebidos e escrever para ficheiro */
                 int iteracoes = 0;
@@ -468,6 +477,7 @@ public class AgenteUDP {
                 if (e.getRecebidos() == wsize && iteracoes == wsize) wsize += 3;
                 else wsize = 1;
                 /* Enviar ACK */
+                System.out.println("Vai enviar ACK com "+sqn);
                 e.setRecebidos(0);
                 DatagramPacket p = (new PDU(sqn, e.getPortaorigem(), e.getPortadestino(), 1, null, 0, 3, e.getIp())).formaPacote();
                 e.colocaParaEnvio(p);
