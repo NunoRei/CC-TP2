@@ -4,11 +4,11 @@ import java.net.DatagramSocket;
 
 public class Receiver implements Runnable {
 
-    private AgenteUDP aUDP;
+    private ReliableTransfer rtrans;
     private int portaorigem;
 
-    public Receiver(AgenteUDP a, int po) {
-        this.aUDP = a;
+    public Receiver(ReliableTransfer a, int po) {
+        this.rtrans = a;
         this.portaorigem = po;
     }
 
@@ -30,7 +30,7 @@ public class Receiver implements Runnable {
                 //System.out.println("Porta "+this.portaorigem+" a espera de pacotes....");
                 ds.receive(pedido);
                 //System.out.println("Recebeu um pacote");
-                aUDP.filtraPacote(pedido);
+                rtrans.filtraPacote(pedido);
                 areceber = new byte[1500];
             }
         } catch (Exception e) {

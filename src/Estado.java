@@ -26,6 +26,7 @@ public class Estado {
     private int esperaACK = 0;
     private int recebeuACK = 0;
     private int SQN = 1;
+    private long RTT;
 
     public Estado (int po, int pd, InetAddress ip)
     {
@@ -199,5 +200,23 @@ public class Estado {
         finally {
             l.unlock();
         }
+    }
+
+    public long getRTT() {
+        return RTT;
+    }
+
+    public void setRTT(long RTT) {
+        this.RTT = RTT;
+    }
+
+    public void clearEstado()
+    {
+        prontoAtransferir=false;
+        janela=1;
+        fsize=0;
+        filename=null;
+        pacotesDoFicheiro = new HashMap<>();
+        recebidos = 0;
     }
 }
