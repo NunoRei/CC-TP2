@@ -1,29 +1,39 @@
-import java.io.*;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Scanner;
 
+/**
+ * Aplicação da Linha de Comandos para transferência de ficheiros.
+ * Aceita os comandos:
+ * CONNECT ip, para estabelecer uma conexão com o ip passado como argumento.
+ * GET caminho do ficheiro, para fazer download de um ficheiro.
+ * PUT caminho do ficheiro, para fazer upload de um ficheiro.
+ * CLOSE para fechar uma conexão estabelecida.
+ */
 public class TransfereCmdLineApp implements Runnable {
-
+    /** Instância da classe ReliableTransfer que implementa a transferência fiável de ficheiros */
     private static ReliableTransfer rtrans;
-    private static int portaorigem;
+    /** Porta de origem */
+    private static int portaorigem = 7777;
 
-    public TransfereCmdLineApp(int po)
+    /**
+     * Construtor da classe
+     */
+    public TransfereCmdLineApp()
     {
         this.rtrans = new ReliableTransfer();
-        this.portaorigem = po;
         new Thread(new Receiver(rtrans,portaorigem)).start();
     }
 
+    /**
+     * Main
+     * @param args
+     */
     public static void main(String[] args) {
         //Listen at port 7777
         int pdestino = 0;
-        new Thread(new TransfereCmdLineApp(Integer.parseInt(args[0]))).start();
-        // CommandLineApp
-        //rtrans = new AgenteUDP(Integer.parseInt(args[0]), Integer.parseInt(args[1])); //"127.0.0.1"
+        new Thread(new TransfereCmdLineApp()).start();
         while (true) {
             Scanner sc = new Scanner(System.in);
             String cmd = sc.nextLine();
@@ -33,9 +43,8 @@ public class TransfereCmdLineApp implements Runnable {
                 case "CONNECT":
                     try {
                         InetAddress ip = InetAddress.getByName(a[1]);
-                        pdestino = Integer.parseInt(a[2]);
-                        int porigem = Integer.parseInt(a[3]);
-                        int response = rtrans.estabeleceConexao(ip,pdestino,porigem);
+                        pdestino = 7777;
+                        int response = rtrans.estabeleceConexao(ip,pdestino,portaorigem);
                         if (response == 0) System.out.println("Conexao Estabelecida!");
                         break;
                     }
@@ -76,14 +85,14 @@ public class TransfereCmdLineApp implements Runnable {
 
             switch (tipo) // tipo da mensagem
             {
-                case 1: // (SYN)
+                case 1:
                     int response = rtrans.aceitaConexao(pacote,portaorigem);
                     if (response==0) System.out.println("Conexao Estabelecida!");
                     break;
-                case 2: // (SYN+ACK)
+                case 2:
                     rtrans.recebeSYNACK(pacote);
                     break;
-                case 3: // ACK
+                case 3:
                     rtrans.recebeuACK(pacote);
                     break;
                 case 5:
